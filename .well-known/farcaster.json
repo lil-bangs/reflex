@@ -1,0 +1,18 @@
+{
+  "accountAssociation": {
+    "header": "",
+    "payload": "",
+    "signature": ""
+  },
+  "frame": {
+    "version": "1",
+    "name": "REFLEX",
+    "iconUrl": "https://reflex-gold.vercel.app/icon.png",
+    "homeUrl": "https://reflex-gold.vercel.app",
+    "imageUrl": "https://reflex-gold.vercel.app/og.png",
+    "buttonTitle": "Test Your Reflex",
+    "splashImageUrl": "https://reflex-gold.vercel.app/icon.png",
+    "splashBackgroundColor": "#000000",
+    "webhookUrl": "https://reflex-gold.vercel.app/api/webhook"
+  }
+}
