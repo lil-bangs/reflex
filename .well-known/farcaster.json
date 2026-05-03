@@ -1,17 +1,17 @@
 {
   "accountAssociation": {
-    "header": "",
-    "payload": "",
-    "signature": ""
+    "header": "eyJmaWQiOjQ2MzcwMywidHlwZSI6ImN1c3RvZHkiLCJrZXkiOiIweEI3QTBiMjUzZjRhN0Q3NDRGOTJENTVkZDE3NzFiNGQwREZhNDZkRmIifQ",
+    "payload": "eyJkb21haW4iOiJyZWZsZXgtZ29sZC52ZXJjZWwuYXBwIn0",
+    "signature": "ZNU/bg0cUWO4QudMSVdcBmGL4vontfSq5dWyBIr+YphuFAGo9Dtbf4VDWq4nAi9HhxfkrgO2kPgGy3qbqTRToBw="
   },
   "frame": {
     "version": "1",
     "name": "REFLEX",
-    "iconUrl": "https://reflex-gold.vercel.app/icon.png",
+    "iconUrl": "https://reflex-gold.vercel.app/api/og",
     "homeUrl": "https://reflex-gold.vercel.app",
-    "imageUrl": "https://reflex-gold.vercel.app/og.png",
-    "buttonTitle": "Test Your Reflex",
-    "splashImageUrl": "https://reflex-gold.vercel.app/icon.png",
+    "imageUrl": "https://reflex-gold.vercel.app/api/og",
+    "buttonTitle": "Test Your Reflex ⚡",
+    "splashImageUrl": "https://reflex-gold.vercel.app/api/og",
     "splashBackgroundColor": "#000000",
     "webhookUrl": "https://reflex-gold.vercel.app/api/webhook"
   }
