@@ -16,7 +16,13 @@ function getChaseText(ms) {
   return `${ms - TIERS[idx - 1].max}ms from ${TIERS[idx - 1].rank}`
 }
 
-export default function Home() {
+export async function getServerSideProps({ query }) {
+  const score = query.score || null
+  const rank = query.rank || null
+  return { props: { score, rank } }
+}
+
+export default function Home({ score, rank }) {
   const [state, setState] = useState('IDLE')
   const [result, setResult] = useState(null)
   const [pb, setPb] = useState(null)
@@ -31,7 +37,6 @@ export default function Home() {
     const saved = parseInt(localStorage.getItem('rfx_pb'))
     if (!isNaN(saved)) setPb(saved)
 
-    // Load Farcaster SDK
     import('https://esm.sh/@farcaster/miniapp-sdk').then(({ sdk }) => {
       sdk.actions.ready()
       setSdk(sdk)
@@ -63,7 +68,6 @@ export default function Home() {
     const tier = getTier(diff)
     setResult({ ms: diff, tier })
 
-    // Personal best
     const saved = parseInt(localStorage.getItem('rfx_pb'))
     if (isNaN(saved) || diff < saved) {
       localStorage.setItem('rfx_pb', diff)
@@ -71,7 +75,6 @@ export default function Home() {
       setIsNewPb(true)
     }
 
-    // Confetti
     if (tier.confetti > 0 && typeof window !== 'undefined' && window.confetti) {
       window.confetti({ particleCount: tier.confetti, spread: 70, origin: { y: 0.45 } })
     }
@@ -81,7 +84,6 @@ export default function Home() {
 
     setState('RESULT')
 
-    // addMiniApp prompt
     if (diff < 250 && sdk) {
       setTimeout(() => sdk.actions.addMiniApp(), 900)
     }
@@ -101,10 +103,10 @@ export default function Home() {
   const share = useCallback(() => {
     if (!result) return
     const ms = result.ms + 'ms'
-    const rank = result.tier.rank
+    const rankStr = result.tier.rank
     const pbLine = pb ? ` (pb: ${pb}ms)` : ''
-    const text = `${rank} — ${ms}${pbLine}\n\nthink you can beat me? ⚡`
-    const shareUrl = `https://reflex-gold.vercel.app?score=${encodeURIComponent(ms)}&rank=${encodeURIComponent(rank)}`
+    const text = `${rankStr} — ${ms}${pbLine}\n\nthink you can beat me? ⚡`
+    const shareUrl = `https://reflex-gold.vercel.app?score=${encodeURIComponent(ms)}&rank=${encodeURIComponent(rankStr)}`
     if (sdk) {
       sdk.actions.composeCast({ text, embeds: [shareUrl] })
     } else {
@@ -114,20 +116,12 @@ export default function Home() {
     }
   }, [result, pb, sdk])
 
-  // Zone class
-  const zoneClass = {
-    IDLE: '', WAITING: 'state-ready', GO: 'state-go',
-    EARLY: 'state-fail', RESULT: ''
-  }[state] || ''
-
-  // Main button
-  const mainBtnLabel = {
-    IDLE: 'START', WAITING: 'WAITING...', GO: 'TAP!',
-    EARLY: 'START', RESULT: 'CAST MY SCORE'
-  }[state] || 'START'
-
+  const zoneClass = { IDLE: '', WAITING: 'state-ready', GO: 'state-go', EARLY: 'state-fail', RESULT: '' }[state] || ''
+  const mainBtnLabel = { IDLE: 'START', WAITING: 'WAITING...', GO: 'TAP!', EARLY: 'START', RESULT: 'CAST MY SCORE' }[state] || 'START'
   const mainBtnClass = state === 'GO' ? 'btn-primary go-btn' : 'btn-primary'
   const mainBtnDisabled = state === 'WAITING'
+
+  const ogImage = `https://reflex-gold.vercel.app/api/og${score && rank ? `?score=${encodeURIComponent(score)}&rank=${encodeURIComponent(rank)}` : ''}`
 
   return (
     <>
@@ -136,10 +130,10 @@ export default function Home() {
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0" />
         <meta property="og:title" content="REFLEX — How fast are you?" />
         <meta property="og:description" content="Tap when it goes green. Simple. Brutal." />
-        <meta property="og:image" content="https://reflex-gold.vercel.app/api/og" />
+        <meta property="og:image" content={ogImage} />
         <meta property="og:url" content="https://reflex-gold.vercel.app" />
         <meta name="fc:frame" content="vNext" />
-        <meta name="fc:frame:image" content="https://reflex-gold.vercel.app/api/og" />
+        <meta name="fc:frame:image" content={ogImage} />
         <meta name="fc:frame:button:1" content="Test Your Reflex" />
         <meta name="fc:frame:post_url" content="https://reflex-gold.vercel.app" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -214,7 +208,7 @@ export default function Home() {
           {state !== 'RESULT' ? (
             <div className="idle-screen">
               <div className="main-text">
-                {state === 'IDLE' && <>'TAP TO<br />START'</>}
+                {state === 'IDLE' && <>TAP TO<br />START</>}
                 {state === 'WAITING' && <>READY<br />...</>}
                 {state === 'GO' && <>NOW!</>}
                 {state === 'EARLY' && <>TOO<br />SOON</>}
