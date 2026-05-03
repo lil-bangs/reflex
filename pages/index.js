@@ -45,8 +45,7 @@ export default function Home({ ogScore, ogRank }) {
     isMobileRef.current = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
     const saved = parseInt(localStorage.getItem('rfx_pb'))
     if (!isNaN(saved)) setPb(saved)
-
-    import('https://esm.sh/@farcaster/miniapp-sdk')
+import('@farcaster/miniapp-sdk')
       .then(({ sdk }) => {
         sdk.actions.ready()
         setFarcasterSdk(sdk)
