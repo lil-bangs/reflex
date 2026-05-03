@@ -9,77 +9,80 @@ const TIERS = [
   { max: Infinity, rank: 'ZOMBIE 🧟',  color: '#ff2d2d', glow: false, confettiCount: 0   },
 ]
 
-function getTier(ms) {
-  return TIERS.find(t => ms < t.max)
-}
-
+function getTier(ms) { return TIERS.find(t => ms < t.max) }
 function getChaseText(ms) {
   const idx = TIERS.findIndex(t => ms < t.max)
-  if (idx === 0) return "you're untouchable 👁️"
-  const gap = ms - TIERS[idx - 1].max
-  return `${gap}ms from ${TIERS[idx - 1].rank}`
+  if (idx === 0) return null
+  return { gap: ms - TIERS[idx - 1].max, rank: TIERS[idx - 1].rank, color: TIERS[idx - 1].color }
 }
 
 export async function getServerSideProps({ query }) {
-  return {
-    props: {
-      ogScore: query.score || null,
-      ogRank: query.rank || null,
-    }
-  }
+  return { props: { ogScore: query.score || null, ogRank: query.rank || null } }
 }
 
 export default function Home({ ogScore, ogRank }) {
-  const [gameState, setGameState] = useState('IDLE') // IDLE | WAITING | GO | EARLY | RESULT
-  const [result, setResult] = useState(null)         // { ms, tier }
+  const [gameState, setGameState] = useState('IDLE')
+  const [result, setResult] = useState(null)
   const [pb, setPb] = useState(null)
   const [isNewPb, setIsNewPb] = useState(false)
   const [farcasterSdk, setFarcasterSdk] = useState(null)
+  const [earlyCount, setEarlyCount] = useState(0)
+  const [shake, setShake] = useState(false)
 
   const timerRef = useRef(null)
   const startTimeRef = useRef(null)
   const isMobileRef = useRef(false)
+  const isGoActiveRef = useRef(false)
+  const mustLiftRef = useRef(false)
+  const earlyCountRef = useRef(0)
 
-  // Init
   useEffect(() => {
     isMobileRef.current = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
     const saved = parseInt(localStorage.getItem('rfx_pb'))
     if (!isNaN(saved)) setPb(saved)
-import('@farcaster/miniapp-sdk')
-      .then(({ sdk }) => {
-        sdk.actions.ready()
-        setFarcasterSdk(sdk)
-      })
+    import('@farcaster/miniapp-sdk')
+      .then(({ sdk }) => { sdk.actions.ready(); setFarcasterSdk(sdk) })
       .catch(() => {})
   }, [])
 
-  // Cleanup timer on unmount
-  useEffect(() => {
-    return () => clearTimeout(timerRef.current)
-  }, [])
+  useEffect(() => { return () => clearTimeout(timerRef.current) }, [])
 
   const startWaiting = useCallback(() => {
     clearTimeout(timerRef.current)
+    isGoActiveRef.current = false
+    mustLiftRef.current = false
     setResult(null)
     setIsNewPb(false)
     setGameState('WAITING')
 
-    const delay = Math.random() * 3500 + 1800
     timerRef.current = setTimeout(() => {
+      mustLiftRef.current = true
       startTimeRef.current = performance.now()
+      isGoActiveRef.current = true
       setGameState('GO')
-    }, delay)
+    }, Math.random() * 3500 + 1800)
   }, [])
 
   const handleEarly = useCallback(() => {
     clearTimeout(timerRef.current)
+    isGoActiveRef.current = false
+    mustLiftRef.current = false
+
+    earlyCountRef.current += 1
+    setEarlyCount(earlyCountRef.current)
+    setShake(true)
+    setTimeout(() => setShake(false), 400)
+    if (navigator.vibrate) navigator.vibrate([30, 20, 30])
+
     setGameState('EARLY')
-    if (navigator.vibrate) navigator.vibrate([25, 25, 25])
-    setTimeout(() => setGameState('IDLE'), 1100)
-  }, [])
+    setTimeout(() => startWaiting(), 900)
+  }, [startWaiting])
 
   const recordResult = useCallback(() => {
-    if (!startTimeRef.current) return
+    if (!isGoActiveRef.current || !startTimeRef.current) return
+    if (mustLiftRef.current) return
+    isGoActiveRef.current = false
+
     const end = performance.now()
     let diff = Math.round(end - startTimeRef.current)
     if (isMobileRef.current) diff = Math.max(0, diff - 15)
@@ -87,7 +90,6 @@ import('@farcaster/miniapp-sdk')
     const tier = getTier(diff)
     setResult({ ms: diff, tier })
 
-    // Personal best
     const saved = parseInt(localStorage.getItem('rfx_pb'))
     if (isNaN(saved) || diff < saved) {
       localStorage.setItem('rfx_pb', diff)
@@ -95,23 +97,23 @@ import('@farcaster/miniapp-sdk')
       setIsNewPb(true)
     }
 
-    // Confetti + haptics
     if (tier.confettiCount > 0) {
       if (typeof window !== 'undefined' && window.confetti) {
         window.confetti({ particleCount: tier.confettiCount, spread: 70, origin: { y: 0.45 } })
       }
-      if (navigator.vibrate) {
-        navigator.vibrate(tier.confettiCount > 100 ? [80, 40, 80, 40, 120] : [60])
-      }
+      if (navigator.vibrate) navigator.vibrate(tier.confettiCount > 100 ? [80, 40, 80, 40, 120] : [60])
     }
 
     setGameState('RESULT')
 
-    // Prompt to save app at peak dopamine
     if (diff < 250 && farcasterSdk) {
       setTimeout(() => farcasterSdk.actions.addMiniApp(), 900)
     }
   }, [farcasterSdk])
+
+  const handleZonePointerUp = useCallback(() => {
+    if (mustLiftRef.current) mustLiftRef.current = false
+  }, [])
 
   const handleZoneTap = useCallback((e) => {
     e.stopPropagation()
@@ -120,10 +122,14 @@ import('@farcaster/miniapp-sdk')
   }, [gameState, handleEarly, recordResult])
 
   const handleMainBtn = useCallback(() => {
-    if (gameState === 'IDLE' || gameState === 'EARLY') startWaiting()
-    else if (gameState === 'GO') recordResult()
-    else if (gameState === 'RESULT') share()
-  }, [gameState, startWaiting, recordResult])
+    if (gameState === 'IDLE') {
+      earlyCountRef.current = 0
+      setEarlyCount(0)
+      startWaiting()
+    } else if (gameState === 'RESULT') {
+      share()
+    }
+  }, [gameState, startWaiting])
 
   const share = useCallback(() => {
     if (!result) return
@@ -132,29 +138,25 @@ import('@farcaster/miniapp-sdk')
     const pbLine = pb ? ` (pb: ${pb}ms)` : ''
     const text = `${rank} — ${ms}${pbLine}\n\nthink you can beat me? ⚡`
     const shareUrl = `https://reflex-gold.vercel.app?score=${encodeURIComponent(ms)}&rank=${encodeURIComponent(rank)}`
-
     if (farcasterSdk) {
       farcasterSdk.actions.composeCast({ text, embeds: [shareUrl] })
     } else {
-      navigator.clipboard?.writeText(text)
-        .then(() => alert('Score copied!'))
-        .catch(() => alert(text))
+      navigator.clipboard?.writeText(text).then(() => alert('Score copied!')).catch(() => alert(text))
     }
   }, [result, pb, farcasterSdk])
 
-  // Derived UI state
   const zoneClass = {
     IDLE: '', WAITING: 'state-ready', GO: 'state-go', EARLY: 'state-fail', RESULT: ''
   }[gameState] || ''
 
   const mainBtnText = {
-    IDLE: 'START', WAITING: 'WAITING...', GO: 'TAP!', EARLY: 'START', RESULT: 'CAST MY SCORE'
+    IDLE: 'START', WAITING: 'WAITING...', GO: 'WAITING...', EARLY: 'WAITING...', RESULT: 'CAST MY SCORE'
   }[gameState] || 'START'
 
+  const chase = result ? getChaseText(result.ms) : null
+
   const ogImage = `https://reflex-gold.vercel.app/api/og${
-    ogScore && ogRank
-      ? `?score=${encodeURIComponent(ogScore)}&rank=${encodeURIComponent(ogRank)}`
-      : ''
+    ogScore && ogRank ? `?score=${encodeURIComponent(ogScore)}&rank=${encodeURIComponent(ogRank)}` : ''
   }`
 
   return (
@@ -203,10 +205,9 @@ import('@farcaster/miniapp-sdk')
             height: 100dvh;
             display: flex;
             flex-direction: column;
-            position: relative;
           }
 
-          /* ── Header ── */
+          /* Header */
           .header {
             display: flex;
             justify-content: space-between;
@@ -220,14 +221,30 @@ import('@farcaster/miniapp-sdk')
             font-size: 2.2rem;
             letter-spacing: 6px;
             line-height: 1;
-            color: #fff;
           }
           .pb-wrap { text-align: right; }
           .pb-label { font-size: 0.55rem; color: #444; letter-spacing: 2px; text-transform: uppercase; display: block; margin-bottom: 2px; }
           .pb-val { font-size: 0.95rem; font-weight: 500; letter-spacing: 1px; color: #fff; }
           .pb-val.empty { color: #333; }
 
-          /* ── Game zone ── */
+          /* Early tap counter */
+          .early-counter {
+            position: absolute;
+            top: 18px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 0.55rem;
+            letter-spacing: 2px;
+            color: #ff2d2d;
+            text-transform: uppercase;
+            opacity: 0;
+            transition: opacity 0.3s;
+            white-space: nowrap;
+            z-index: 10;
+          }
+          .early-counter.visible { opacity: 1; }
+
+          /* Game zone */
           .zone {
             flex: 1;
             min-height: 0;
@@ -240,6 +257,16 @@ import('@farcaster/miniapp-sdk')
             overflow: hidden;
             transition: background 0.07s;
           }
+          .zone.shake { animation: shake 0.4s cubic-bezier(0.36, 0.07, 0.19, 0.97); }
+          @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            15%       { transform: translateX(-8px); }
+            30%       { transform: translateX(8px); }
+            45%       { transform: translateX(-6px); }
+            60%       { transform: translateX(6px); }
+            75%       { transform: translateX(-3px); }
+            90%       { transform: translateX(3px); }
+          }
           .zone-flash {
             position: absolute;
             inset: 0;
@@ -249,17 +276,12 @@ import('@farcaster/miniapp-sdk')
           }
           .zone.state-ready .zone-flash { background: rgba(124,101,193,0.09); opacity: 1; }
           .zone.state-go    .zone-flash { background: rgba(0,255,136,0.1);    opacity: 1; }
-          .zone.state-fail  .zone-flash { background: rgba(255,45,45,0.13);   opacity: 1; }
+          .zone.state-fail  .zone-flash { background: rgba(255,45,45,0.15);   opacity: 1; }
 
           /* Corner brackets */
-          .corner {
-            position: absolute;
-            width: 32px;
-            height: 32px;
-            transition: border-color 0.12s;
-          }
-          .corner.tl { top: 18px;    left: 18px;    border-top: 2px solid #1a1a1a;  border-left: 2px solid #1a1a1a; }
-          .corner.br { bottom: 18px; right: 18px;   border-bottom: 2px solid #1a1a1a; border-right: 2px solid #1a1a1a; }
+          .corner { position: absolute; width: 32px; height: 32px; transition: border-color 0.12s; }
+          .corner.tl { top: 18px;    left: 18px;  border-top: 2px solid #1a1a1a;    border-left: 2px solid #1a1a1a; }
+          .corner.br { bottom: 18px; right: 18px; border-bottom: 2px solid #1a1a1a; border-right: 2px solid #1a1a1a; }
           .zone.state-ready .corner { border-color: rgba(124,101,193,0.5); }
           .zone.state-go    .corner { border-color: #00ff88; }
           .zone.state-fail  .corner { border-color: #ff2d2d; }
@@ -279,7 +301,7 @@ import('@farcaster/miniapp-sdk')
             100% { transform: scale(2.8); opacity: 0; }
           }
 
-          /* ── Idle content ── */
+          /* Idle content */
           .idle-content { text-align: center; pointer-events: none; position: relative; z-index: 1; }
           .main-text {
             font-family: 'Bebas Neue', sans-serif;
@@ -299,7 +321,7 @@ import('@farcaster/miniapp-sdk')
           }
           .zone.state-go .sub-text { color: rgba(0,0,0,0.45); }
 
-          /* ── Result content ── */
+          /* Result content */
           .result-content {
             text-align: center;
             pointer-events: none;
@@ -311,7 +333,7 @@ import('@farcaster/miniapp-sdk')
           }
           @keyframes popIn {
             from { transform: scale(0.82) translateY(10px); opacity: 0; }
-            to   { transform: scale(1)    translateY(0);    opacity: 1; }
+            to   { transform: scale(1) translateY(0); opacity: 1; }
           }
           .res-ms {
             font-family: 'Bebas Neue', sans-serif;
@@ -325,14 +347,36 @@ import('@farcaster/miniapp-sdk')
             letter-spacing: 5px;
             margin-top: 4px;
           }
-          .res-chase {
-            font-size: 0.63rem;
-            color: #444;
+
+          /* Chase text — big and impossible to miss */
+          .res-chase-wrap {
+            margin-top: 18px;
+            min-height: 48px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+          }
+          .chase-gap {
+            font-family: 'Bebas Neue', sans-serif;
+            font-size: clamp(2rem, 7vw, 2.8rem);
+            letter-spacing: 2px;
+            line-height: 1;
+          }
+          .chase-label {
+            font-size: 0.6rem;
             letter-spacing: 2px;
             text-transform: uppercase;
-            margin-top: 10px;
-            min-height: 14px;
+            color: #555;
           }
+          .untouchable {
+            font-size: 0.75rem;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+            color: #555;
+            margin-top: 10px;
+          }
+
           .pb-badge {
             display: inline-block;
             font-size: 0.6rem;
@@ -358,7 +402,7 @@ import('@farcaster/miniapp-sdk')
             z-index: 1;
           }
 
-          /* ── Action bar ── */
+          /* Action bar */
           .action-bar {
             padding: 16px 24px 32px;
             border-top: 1px solid #1a1a1a;
@@ -383,7 +427,6 @@ import('@farcaster/miniapp-sdk')
           }
           .btn-main:active:not(:disabled) { transform: scale(0.97); }
           .btn-main:disabled { opacity: 0.35; cursor: default; }
-          .btn-main.go { background: #00ff88; }
           .btn-secondary {
             background: transparent;
             color: #444;
@@ -404,23 +447,30 @@ import('@farcaster/miniapp-sdk')
       </Head>
 
       <div className="app">
-        {/* Header */}
         <header className="header">
           <div className="logo">REFLEX</div>
           <div className="pb-wrap">
             <span className="pb-label">personal best</span>
-            <span className={`pb-val${pb ? '' : ' empty'}`}>
-              {pb ? `${pb}ms` : '—'}
-            </span>
+            <span className={`pb-val${pb ? '' : ' empty'}`}>{pb ? `${pb}ms` : '—'}</span>
           </div>
         </header>
 
-        {/* Game zone */}
-        <div className={`zone ${zoneClass}`} onPointerDown={handleZoneTap}>
+        <div
+          className={`zone ${zoneClass}${shake ? ' shake' : ''}`}
+          onPointerDown={handleZoneTap}
+          onPointerUp={handleZonePointerUp}
+        >
           <div className="zone-flash" />
           <div className="pulse-ring" />
           <div className="corner tl" />
           <div className="corner br" />
+
+          {/* Early tap counter — subtle but visible */}
+          {earlyCount > 0 && gameState !== 'RESULT' && (
+            <div className={`early-counter visible`}>
+              jumped early × {earlyCount}
+            </div>
+          )}
 
           {gameState !== 'RESULT' ? (
             <div className="idle-content">
@@ -433,25 +483,32 @@ import('@farcaster/miniapp-sdk')
               <div className="sub-text">
                 {gameState === 'IDLE'    && 'vault reflex test'}
                 {gameState === 'WAITING' && 'wait for it'}
-                {gameState === 'GO'      && 'tap!'}
-                {gameState === 'EARLY'   && 'calm down...'}
+                {gameState === 'GO'      && 'tap the screen'}
+                {gameState === 'EARLY'   && 'trying again...'}
               </div>
             </div>
           ) : result ? (
             <div className="result-content">
-              <div className="res-ms" style={{ color: result.tier.color }}>
-                {result.ms}ms
+              <div className="res-ms" style={{ color: result.tier.color }}>{result.ms}ms</div>
+              <div className="res-rank" style={{
+                color: result.tier.color,
+                textShadow: result.tier.glow ? `0 0 40px ${result.tier.color}88` : 'none',
+              }}>{result.tier.rank}</div>
+
+              {/* Chase text — big, colored, impossible to miss */}
+              <div className="res-chase-wrap">
+                {chase ? (
+                  <>
+                    <div className="chase-gap" style={{ color: chase.color }}>
+                      {chase.gap}ms
+                    </div>
+                    <div className="chase-label">away from {chase.rank}</div>
+                  </>
+                ) : (
+                  <div className="untouchable">you're untouchable 👁️</div>
+                )}
               </div>
-              <div
-                className="res-rank"
-                style={{
-                  color: result.tier.color,
-                  textShadow: result.tier.glow ? `0 0 40px ${result.tier.color}88` : 'none',
-                }}
-              >
-                {result.tier.rank}
-              </div>
-              <div className="res-chase">{getChaseText(result.ms)}</div>
+
               {isNewPb && <div className="pb-badge">🏆 new personal best</div>}
             </div>
           ) : null}
@@ -459,17 +516,16 @@ import('@farcaster/miniapp-sdk')
           <div className="ticker">
             {gameState === 'IDLE'    && 'tap anywhere to start'}
             {gameState === 'WAITING' && "don't tap yet"}
-            {gameState === 'EARLY'   && 'too soon...'}
+            {gameState === 'EARLY'   && ''}
             {gameState === 'GO'      && ''}
             {gameState === 'RESULT'  && ''}
           </div>
         </div>
 
-        {/* Action bar */}
         <div className="action-bar">
           <button
-            className={`btn-main${gameState === 'GO' ? ' go' : ''}`}
-            disabled={gameState === 'WAITING'}
+            className="btn-main"
+            disabled={gameState === 'WAITING' || gameState === 'GO' || gameState === 'EARLY'}
             onClick={handleMainBtn}
           >
             {mainBtnText}
