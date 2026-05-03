@@ -268,24 +268,25 @@ export default function Home() {
           document.getElementById('subText').textContent = 'VAULT REFLEX TEST';
           document.getElementById('ticker').textContent = 'tap anywhere to start';
           const mainBtn = document.getElementById('mainBtn');
-          mainBtn.textContent = 'START';
+      
+         mainBtn.textContent = 'START';
           mainBtn.className = 'btn-primary';
           mainBtn.disabled = false;
           mainBtn.onclick = handleMainBtn;
           document.getElementById('retryBtn').style.display = 'none';
         }
+ 
+        
+
         function share() {
           const ms = document.getElementById('resTime').textContent;
           const rank = document.getElementById('resRank').textContent;
           const pbLine = personalBest ? ' (pb: ' + personalBest + 'ms)' : '';
           const text = rank + ' — ' + ms + pbLine + '\\n\\nthink you can beat me? ⚡';
+          const shareUrl = 'https://reflex-gold.vercel.app?score=' + encodeURIComponent(ms) + '&rank=' + encodeURIComponent(rank);
           if (window.farcasterSDK) {
-            window.farcasterSDK.actions.composeCast({ text, embeds: [window.location.href] });
+            window.farcasterSDK.actions.composeCast({ text, embeds: [shareUrl] });
           } else {
             navigator.clipboard?.writeText(text).then(() => alert('Copied!')).catch(() => alert(text));
           }
         }
-      `}} />
-    </>
-  )
-}
